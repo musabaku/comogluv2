@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Price Catalog</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+
+    <!-- Header Section -->
+    <header class="bg-white shadow-md">
+        <div class="container mx-auto px-4 py-6">
+            <h1 class="text-4xl font-bold text-center text-gray-800">
+                Digital Price Catalog
+            </h1>
+            <p class="text-center text-gray-500 mt-2">Prices from Google Sheet</p>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container mx-auto p-4 md:p-8">
+        <!-- Brand Navigation Buttons -->
+        <nav id="brand-nav" class="bg-white p-4 shadow-md mb-8 rounded-lg">
+            <div id="brand-nav-buttons" class="flex flex-wrap justify-center gap-2">
+                <!-- Brand buttons will be dynamically injected here by JavaScript -->
+            </div>
+        </nav>
+
+        <!-- Product Display Section -->
+        <div>
+            <h2 id="brand-title" class="text-3xl font-bold text-gray-800 mb-6 pb-2 border-b-2 border-blue-500">
+                Loading...
+            </h2>
+            <div id="product-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                <!-- Product cards will be dynamically injected here by JavaScript -->
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer Section -->
+    <footer class="text-center py-4 mt-8 bg-white shadow-inner">
+        <p class="text-gray-500 text-sm">&copy; 2025 Çomoğlu Gıda Price Catalog. All rights reserved.</p>
+    </footer>
+
+    <script>
+        // --- Configuration ---
+        // URL for the published Google Sheet CSV
+        const googleSheetCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTemIQAjyMsEqPPUYaNMIn2rwrEbuqR7NrW9vey_mC1iZmIn7FZlOH7g3Co7bZG5B18BJy7Cjldvs53/pub?gid=0&single=true&output=csv';
+
+        // --- DOM Elements ---
+        const brandNavContainer = document.getElementById('brand-nav-buttons');
+        const brandTitle = document.getElementById('brand-title');
+        const productGrid = document.getElementById('product-grid');
+        let catalogData = {};
+
+        /**
+         * Parses CSV text into a structured JavaScript object.
+         * The function identifies columns by headers, so their order in the sheet doesn't matter.
+         * @param {string} csvText - The raw CSV data text.
+         * @returns {object} - The structured catalog data, grouped by brand.
+         */
+        function parseCsvData(csvText) {
+            const data = {};
+            const rows = csvText.trim().split('\n');
+            const headers = rows[0].split(',').map(h => h.trim());
+            
+            // Find column indices based on header names
+            const brandIndex = headers.indexOf('Brand');
+            const nameIndex = headers.indexOf('Name');
+            const priceIndex = headers.indexOf('Price');
+            const codeIndex = headers.indexOf('ProductCode');
+            const imageIndex = headers.indexOf('ImageURL');
+            const idIndex = headers.indexOf('ID');
+
+            // Process each row after the header
+            for (let i = 1; i < rows.length; i++) {
+                const values = rows[i].split(',');
+                const brand = values[brandIndex];
+
+                if (!brand) continue; // Skip rows without a brand
+
+                if (!data[brand]) {
+                    data[brand] = [];
+                }
+
+                data[brand].push({
+                    id: values[idIndex] || `prod-${i}`,
+                    productCode: values[codeIndex],
+                    name: values[nameIndex],
+                    price: parseFloat(values[priceIndex]) || 0,
+                    imageUrl: values[imageIndex]
+                });
+            }
+            return data;
+        }
+        
+        /**
+         * Renders the product grid for a selected brand.
+         * @param {string} brand - The name of the brand to display.
+         */
+        function displayProducts(brand) {
+            brandTitle.textContent = brand;
+            productGrid.innerHTML = '';
+
+            // Update active state of navigation buttons
+            document.querySelectorAll('#brand-nav-buttons button').forEach(button => {
+                button.className = `px-4 py-2 text-sm font-medium rounded-full transition-colors duration-200 ${
+                    button.textContent === brand
+                        ? 'bg-blue-600 text-white shadow-lg'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`;
+            });
+
+            const products = catalogData[brand] || [];
+            let gridHTML = '';
+            products.forEach(product => {
+                const imageUrl = product.imageUrl || `https://placehold.co/600x400/EEE/31343C?text=${encodeURIComponent(product.name.split(' ')[0])}`;
+                // Card structure updated to prevent text overlap
+                gridHTML += `
+                    <div class="product-card bg-white rounded-lg shadow-md overflow-hidden flex flex-col transform hover:scale-105 transition-transform duration-300 ease-in-out">
+                        <img 
+                            src="${imageUrl}" 
+                            alt="${product.name}" 
+                            class="w-full h-48 object-cover"
+                            onError="this.onerror=null;this.src='https://placehold.co/600x400/CCCCCC/FFFFFF?text=Image+Not+Found';"
+                        />
+                        <div class="p-4 flex flex-col flex-grow">
+                            <div class="flex-grow">
+                                <h3 class="text-lg font-semibold text-gray-800 mb-2">${product.name}</h3>
+                                <p class="text-sm text-gray-500 mb-2">SKU: ${product.productCode}</p>
+                            </div>
+                            <div class="mt-4">
+                                <p class="text-2xl font-bold text-gray-900">
+                                    ${product.price.toFixed(2)} TL
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            productGrid.innerHTML = gridHTML;
+        }
+
+        /**
+         * Initializes the application by fetching and processing the data from Google Sheets.
+         */
+        async function initializeApp() {
+            try {
+                const response = await fetch(googleSheetCsvUrl);
+                if (!response.ok) {
+                    throw new Error('Network response was not ok. Check if the sheet is published correctly.');
+                }
+                const csvText = await response.text();
+                catalogData = parseCsvData(csvText);
+
+                const brands = Object.keys(catalogData);
+                
+                // Create brand navigation
+                brands.forEach(brand => {
+                    const button = document.createElement('button');
+                    button.textContent = brand;
+                    button.onclick = () => displayProducts(brand);
+                    brandNavContainer.appendChild(button);
+                });
+                
+                // Display the first brand by default
+                if (brands.length > 0) {
+                    displayProducts(brands[0]);
+                } else {
+                    brandTitle.textContent = "No products found."
+                }
+            } catch (error) {
+                console.error('Failed to fetch or parse data:', error);
+                brandTitle.textContent = "Error loading products.";
+                productGrid.innerHTML = `<p class="text-red-500">Could not load product data. Please check the Google Sheet URL and make sure it's published correctly to the web as a CSV file.</p>`;
+            }
+        }
+
+        // Start the application once the DOM is fully loaded
+        document.addEventListener('DOMContentLoaded', initializeApp);
+
+    </script>
+</body>
+</html>
