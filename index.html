@@ -123,7 +123,7 @@
             const products = catalogData[brand] || [];
             let gridHTML = '';
             products.forEach(product => {
-                const transformation = 'w_600,h_600,c_pad,b_auto:predominant';
+            const transformation = 'w_400,h_400,c_pad';
                 const baseImageUrl = product.imageUrl || `https://placehold.co/400x400/EEE/31343C?text=${encodeURIComponent(product.name.split(' ')[0])}`;
                     const imageUrl = product.imageUrl ? baseImageUrl.replace('/upload/', `/upload/${transformation}/`) : baseImageUrl;                // Card structure updated to prevent text overlap
                 gridHTML += `
