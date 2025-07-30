@@ -3,192 +3,296 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Digital Price Catalog</title>
+    <title>Brand Image Search Tool</title>
     <!-- Tailwind CSS for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Simple transition for the accordion panel */
+        .accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        /* Style for completed items */
+        .completed {
+            text-decoration: line-through;
+            color: #9ca3af; /* Tailwind's gray-400 */
+        }
+    </style>
 </head>
-<body class="bg-gray-100 font-sans">
+<body class="bg-gray-50 text-gray-800">
 
-    <!-- Header Section -->
-    <header class="bg-white shadow-md">
-        <div class="container mx-auto px-4 py-6">
-            <h1 class="text-4xl font-bold text-center text-gray-800">
-                Digital Price Catalog
-            </h1>
-            <p class="text-center text-gray-500 mt-2">Prices from Google Sheet</p>
-        </div>
-    </header>
+    <div class="container mx-auto p-4 sm:p-6 md:p-8 max-w-4xl">
 
-    <!-- Main Content -->
-    <main class="container mx-auto p-4 md:p-8">
-        <!-- Brand Navigation Buttons -->
-        <nav id="brand-nav" class="bg-white p-4 shadow-md mb-8 rounded-lg">
-            <div id="brand-nav-buttons" class="flex flex-wrap justify-center gap-2">
-                <!-- Brand buttons will be dynamically injected here by JavaScript -->
+        <!-- Header Section -->
+        <header class="text-center mb-8">
+            <h1 class="text-3xl sm:text-4xl font-bold text-gray-900">Google Sheet Product Image Search</h1>
+            <p class="mt-2 text-lg text-gray-600">Click a brand to see its products and search for images.</p>
+        </header>
+
+        <!-- Main Content -->
+        <main class="bg-white p-4 sm:p-6 rounded-xl shadow-md border border-gray-200">
+            
+            <!-- Loading State -->
+            <div id="loading-state" class="text-center py-10">
+                <p class="text-lg font-medium text-gray-700">Fetching and organizing your products...</p>
+                <div class="mt-4 w-16 h-16 border-4 border-blue-500 border-dashed rounded-full animate-spin mx-auto"></div>
             </div>
-        </nav>
 
-        <!-- Product Display Section -->
-        <div>
-            <h2 id="brand-title" class="text-3xl font-bold text-gray-800 mb-6 pb-2 border-b-2 border-blue-500">
-                Loading...
-            </h2>
-            <div id="product-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                <!-- Product cards will be dynamically injected here by JavaScript -->
+            <!-- Error Message Display -->
+            <div id="error-message" class="hidden text-center py-10 bg-red-50 text-red-700 rounded-lg">
+                <h3 class="font-bold text-xl">An Error Occurred</h3>
+                <p id="error-text" class="mt-2"></p>
             </div>
-        </div>
-    </main>
 
-    <!-- Footer Section -->
-    <footer class="text-center py-4 mt-8 bg-white shadow-inner">
-        <p class="text-gray-500 text-sm">&copy; 2025 Çomoğlu Gıda Price Catalog. All rights reserved.</p>
-    </footer>
+            <!-- Accordion Container -->
+            <div id="accordion-container" class="hidden">
+                 <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <h3 class="font-bold text-lg text-blue-800">Instructions</h3>
+                    <ul class="list-disc list-inside text-blue-700 mt-2 space-y-1">
+                        <li>Click the checkmark (✓) to mark a product as "done". Your progress is saved automatically.</li>
+                        <li>Click an individual product name to open one image search tab.</li>
+                        <li>Click the "Search All" button to open tabs for every product in that list.</li>
+                    </ul>
+                    <p class="text-sm text-yellow-700 bg-yellow-100 p-2 rounded-md mt-3"><strong>Important:</strong> Your browser might block multiple tabs. If it does, please "Allow pop-ups" for this page to use the "Search All" feature.</p>
+                </div>
+                <div id="brand-accordions" class="space-y-3">
+                    <!-- Accordions will be dynamically inserted here -->
+                </div>
+            </div>
+
+        </main>
+    </div>
 
     <script>
-        // --- Configuration ---
-        // URL for the published Google Sheet CSV
-        const googleSheetCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTemIQAjyMsEqPPUYaNMIn2rwrEbuqR7NrW9vey_mC1iZmIn7FZlOH7g3Co7bZG5B18BJy7Cjldvs53/pub?gid=0&single=true&output=csv';
+        // --- CONFIGURATION ---
+        const googleSheetUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTemIQAjyMsEqPPUYaNMIn2rwrEbuqR7NrW9vey_mC1iZmIn7FZlOH7g3Co7bZG5B18BJy7Cjldvs53/pub?output=csv';
+        const STORAGE_KEY = 'brandImageTool_doneItems';
 
-        // --- DOM Elements ---
-        const brandNavContainer = document.getElementById('brand-nav-buttons');
-        const brandTitle = document.getElementById('brand-title');
-        const productGrid = document.getElementById('product-grid');
-        let catalogData = {};
+        // --- DOM ELEMENTS ---
+        const loadingState = document.getElementById('loading-state');
+        const errorMessage = document.getElementById('error-message');
+        const errorText = document.getElementById('error-text');
+        const accordionContainer = document.getElementById('accordion-container');
+        const brandAccordions = document.getElementById('brand-accordions');
+
+        // --- PERSISTENCE LOGIC ---
+        
+        /**
+         * Retrieves the set of completed items from localStorage.
+         * @returns {Set<string>} A set of unique identifiers for completed items.
+         */
+        function getCompletedItems() {
+            const storedItems = localStorage.getItem(STORAGE_KEY);
+            return storedItems ? new Set(JSON.parse(storedItems)) : new Set();
+        }
 
         /**
-         * Parses CSV text into a structured JavaScript object.
-         * The function identifies columns by headers, so their order in the sheet doesn't matter.
-         * @param {string} csvText - The raw CSV data text.
-         * @returns {object} - The structured catalog data, grouped by brand.
+         * Saves the set of completed items to localStorage.
+         * @param {Set<string>} completedItemsSet - The set of completed items to save.
          */
-        function parseCsvData(csvText) {
-            const data = {};
-            const rows = csvText.trim().split('\n');
-            const headers = rows[0].split(',').map(h => h.trim());
-            
-            // Find column indices based on header names
-            const brandIndex = headers.indexOf('Brand');
-            const nameIndex = headers.indexOf('Name');
-            const priceIndex = headers.indexOf('Price');
-            const codeIndex = headers.indexOf('ProductCode');
-            const imageIndex = headers.indexOf('ImageURL');
-            const idIndex = headers.indexOf('ID');
+        function saveCompletedItems(completedItemsSet) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(completedItemsSet)));
+        }
 
-            // Process each row after the header
-            for (let i = 1; i < rows.length; i++) {
-                const rowText = rows[i].trim();
+        // --- CORE LOGIC ---
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchAndProcessData();
+        });
 
-                // Skip empty rows or rows that are repeated headers
-                if (rowText === '' || rowText.split(',')[0].trim() === headers[0]) {
-                    continue;
+        /**
+         * A simple CSV parser.
+         */
+        function parseCSV(csvText) {
+            const sanitizedText = csvText.replace(/\r/g, "");
+            const lines = sanitizedText.trim().split('\n');
+            if (lines.length < 2) return [];
+
+            const headers = lines[0].split(',').map(header => header.trim());
+            const data = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(',').map(value => value.trim());
+                if (values.length === headers.length) {
+                    const rowObject = {};
+                    for (let j = 0; j < headers.length; j++) {
+                        rowObject[headers[j]] = values[j];
+                    }
+                    data.push(rowObject);
                 }
-                
-                const values = rowText.split(',');
-                const brand = values[brandIndex];
-
-                if (!brand) continue; // Skip rows without a brand
-
-                if (!data[brand]) {
-                    data[brand] = [];
-                }
-
-                data[brand].push({
-                    id: values[idIndex] || `prod-${i}`,
-                    productCode: values[codeIndex],
-                    name: values[nameIndex],
-                    price: parseFloat(values[priceIndex]) || 0,
-                    imageUrl: values[imageIndex]
-                });
             }
             return data;
         }
-        
-        /**
-         * Renders the product grid for a selected brand.
-         * @param {string} brand - The name of the brand to display.
-         */
-        function displayProducts(brand) {
-            brandTitle.textContent = brand;
-            productGrid.innerHTML = '';
-
-            // Update active state of navigation buttons
-            document.querySelectorAll('#brand-nav-buttons button').forEach(button => {
-                button.className = `px-4 py-2 text-sm font-medium rounded-full transition-colors duration-200 ${
-                    button.textContent === brand
-                        ? 'bg-blue-600 text-white shadow-lg'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                }`;
-            });
-
-            const products = catalogData[brand] || [];
-            let gridHTML = '';
-            products.forEach(product => {
-            const transformation = 'w_400,h_400,c_pad';
-                const baseImageUrl = product.imageUrl || `https://placehold.co/400x400/EEE/31343C?text=${encodeURIComponent(product.name.split(' ')[0])}`;
-                    const imageUrl = product.imageUrl ? baseImageUrl.replace('/upload/', `/upload/${transformation}/`) : baseImageUrl;                // Card structure updated to prevent text overlap
-                gridHTML += `
-                    <div class="product-card bg-white rounded-lg shadow-md overflow-hidden flex flex-col transform hover:scale-105 transition-transform duration-300 ease-in-out">
-                        <img 
-                            src="${imageUrl}" 
-                            alt="${product.name}" 
-                            class="w-full h-48 object-contain"
-                            onError="this.onerror=null;this.src='https://placehold.co/600x400/CCCCCC/FFFFFF?text=Image+Not+Found';"
-                        />
-                        <div class="p-4 flex flex-col flex-grow">
-                            <div class="flex-grow">
-                                <h3 class="text-lg font-semibold text-gray-800 mb-2">${product.name}</h3>
-                                <p class="text-sm text-gray-500 mb-2">SKU: ${product.productCode}</p>
-                            </div>
-                            <div class="mt-4">
-                                <p class="text-2xl font-bold text-gray-900">
-                                    ${product.price.toFixed(2)} TL
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            });
-            productGrid.innerHTML = gridHTML;
-        }
 
         /**
-         * Initializes the application by fetching and processing the data from Google Sheets.
+         * Fetches, parses, and processes the data from the Google Sheet.
          */
-        async function initializeApp() {
+        async function fetchAndProcessData() {
             try {
-                const response = await fetch(googleSheetCsvUrl);
-                if (!response.ok) {
-                    throw new Error('Network response was not ok. Check if the sheet is published correctly.');
-                }
+                const response = await fetch(googleSheetUrl);
+                if (!response.ok) throw new Error(`Network response was not ok. Status: ${response.status}`);
+                
                 const csvText = await response.text();
-                catalogData = parseCsvData(csvText);
+                const parsedData = parseCSV(csvText);
+                if (!parsedData || parsedData.length === 0) throw new Error("Failed to parse CSV or the file is empty.");
 
-                const brands = Object.keys(catalogData);
+                const productsByBrand = groupProducts(parsedData);
                 
-                // Create brand navigation
-                brands.forEach(brand => {
-                    const button = document.createElement('button');
-                    button.textContent = brand;
-                    button.onclick = () => displayProducts(brand);
-                    brandNavContainer.appendChild(button);
-                });
+                createBrandAccordions(productsByBrand);
                 
-                // Display the first brand by default
-                if (brands.length > 0) {
-                    displayProducts(brands[0]);
-                } else {
-                    brandTitle.textContent = "No products found."
-                }
+                loadingState.classList.add('hidden');
+                accordionContainer.classList.remove('hidden');
+
             } catch (error) {
-                console.error('Failed to fetch or parse data:', error);
-                brandTitle.textContent = "Error loading products.";
-                productGrid.innerHTML = `<p class="text-red-500">Could not load product data. Please check the Google Sheet URL and make sure it's published correctly to the web as a CSV file.</p>`;
+                console.error('Error fetching or processing data:', error);
+                loadingState.classList.add('hidden');
+                errorText.textContent = `Failed to load data from the Google Sheet. Please ensure the link is correct and the sheet is published. Details: ${error.message}`;
+                errorMessage.classList.remove('hidden');
             }
         }
 
-        // Start the application once the DOM is fully loaded
-        document.addEventListener('DOMContentLoaded', initializeApp);
+        /**
+         * Groups an array of product objects by their 'Brand' property.
+         */
+        function groupProducts(data) {
+            const grouped = {};
+            data.forEach(row => {
+                const brand = row.Brand ? row.Brand.trim() : 'Unnamed Brand';
+                const name = row.Name ? row.Name.trim() : null;
 
+                if (brand && name) {
+                    if (!grouped[brand]) {
+                        grouped[brand] = [];
+                    }
+                    grouped[brand].push(name);
+                }
+            });
+            return grouped;
+        }
+
+        /**
+         * Opens a Google Images search tab for a given query.
+         */
+        function openSearchTab(brand, productName) {
+            const fullQuery = `${brand} ${productName}`;
+            const searchQuery = encodeURIComponent(fullQuery);
+            const googleImagesUrl = `https://www.google.com/search?tbm=isch&q=${searchQuery}`;
+            window.open(googleImagesUrl, '_blank');
+        }
+
+        /**
+         * Creates and appends an accordion for each brand to the DOM.
+         */
+        function createBrandAccordions(productsByBrand) {
+            const brands = Object.keys(productsByBrand).sort();
+            const completedItems = getCompletedItems();
+
+            if (brands.length === 0) {
+                 errorText.textContent = "No valid 'Brand' and 'Name' columns found, or the sheet is empty.";
+                 errorMessage.classList.remove('hidden');
+                 return;
+            }
+
+            brands.forEach(brand => {
+                const products = productsByBrand[brand];
+                const accordionItem = document.createElement('div');
+                accordionItem.className = "border border-gray-200 rounded-lg";
+
+                const button = document.createElement('button');
+                button.className = "w-full flex justify-between items-center text-left p-4 bg-gray-50 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors duration-200";
+                button.innerHTML = `
+                    <span class="font-semibold text-lg text-gray-800">${brand}</span>
+                    <svg class="w-6 h-6 transform transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                `;
+                
+                const content = document.createElement('div');
+                content.className = "accordion-content bg-white";
+                
+                const contentWrapper = document.createElement('div');
+                contentWrapper.className = 'p-4 border-t border-gray-200';
+
+                const productList = document.createElement('ul');
+                productList.className = 'space-y-2 mb-4';
+                
+                products.forEach(productName => {
+                    const uniqueId = `${brand}|${productName}`;
+                    
+                    const li = document.createElement('li');
+                    li.className = 'flex items-center justify-between';
+
+                    const productLink = document.createElement('a');
+                    productLink.href = '#';
+                    productLink.textContent = productName;
+                    productLink.className = 'text-blue-600 hover:underline hover:text-blue-800 flex-grow';
+                    productLink.onclick = (e) => {
+                        e.preventDefault();
+                        openSearchTab(brand, productName);
+                    };
+
+                    const completeButton = document.createElement('button');
+                    completeButton.innerHTML = '✓';
+                    completeButton.className = 'ml-4 px-2 py-0.5 border rounded-md text-sm font-bold transition-colors duration-200';
+                    
+                    // Apply initial state (completed or not)
+                    if (completedItems.has(uniqueId)) {
+                        productLink.classList.add('completed');
+                        completeButton.classList.add('bg-green-500', 'text-white', 'border-green-500');
+                    } else {
+                        completeButton.classList.add('bg-gray-200', 'text-gray-600', 'border-gray-300');
+                    }
+
+                    completeButton.onclick = () => {
+                        if (completedItems.has(uniqueId)) {
+                            completedItems.delete(uniqueId);
+                            productLink.classList.remove('completed');
+                            completeButton.classList.remove('bg-green-500', 'text-white', 'border-green-500');
+                            completeButton.classList.add('bg-gray-200', 'text-gray-600', 'border-gray-300');
+                        } else {
+                            completedItems.add(uniqueId);
+                            productLink.classList.add('completed');
+                            completeButton.classList.add('bg-green-500', 'text-white', 'border-green-500');
+                            completeButton.classList.remove('bg-gray-200', 'text-gray-600', 'border-gray-300');
+                        }
+                        saveCompletedItems(completedItems);
+                    };
+
+                    li.appendChild(productLink);
+                    li.appendChild(completeButton);
+                    productList.appendChild(li);
+                });
+
+                const searchAllButton = document.createElement('button');
+                searchAllButton.textContent = `Search All ${products.length} Products`;
+                searchAllButton.className = "w-full mt-4 p-2 bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75 transition-colors duration-200";
+                searchAllButton.onclick = () => {
+                    products.forEach(productName => openSearchTab(brand, productName));
+                };
+
+                contentWrapper.appendChild(productList);
+                contentWrapper.appendChild(searchAllButton);
+                content.appendChild(contentWrapper);
+                
+                accordionItem.appendChild(button);
+                accordionItem.appendChild(content);
+                brandAccordions.appendChild(accordionItem);
+
+                button.addEventListener('click', () => {
+                    const isActive = content.style.maxHeight;
+                    button.querySelector('svg').classList.toggle('rotate-180');
+                    if (isActive) {
+                        content.style.maxHeight = null;
+                    } else {
+                        content.style.maxHeight = content.scrollHeight + "px";
+                    }
+                });
+            });
+        }
     </script>
 </body>
 </html>
